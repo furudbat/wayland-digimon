@@ -15,8 +15,22 @@ static pid_t input_child_pid = -1;
 
 // Child process signal handler - exits quietly without logging
 static void child_signal_handler(int sig) {
-    (void)sig; // Suppress unused parameter warning
-    exit(0);
+    switch (sig) {
+        case SIGINT:
+        case SIGTERM:
+            _exit(0);
+            break;
+        case SIGCHLD:
+            // Handle child process termination
+            //while (waitpid(-1, NULL, WNOHANG) > 0);
+            break;
+        case SIGUSR2:
+            // ignore reload in child process
+            break;
+        default:
+            bongocat_log_warning("Received unexpected signal %d", sig);
+            break;
+    }
 }
 
 static void capture_input_multiple(char **device_paths, int num_devices, int enable_debug) {
@@ -26,7 +40,9 @@ static void capture_input_multiple(char **device_paths, int num_devices, int ena
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
     sigaction(SIGTERM, &sa, NULL);
-    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);;
+    sigaction(SIGUSR2, &sa, NULL);
+    signal(SIGPIPE, SIG_IGN);
     
     bongocat_log_debug("Starting input capture on %d devices", num_devices);
     
@@ -34,7 +50,7 @@ static void capture_input_multiple(char **device_paths, int num_devices, int ena
     char **unique_paths = BONGOCAT_MALLOC(num_devices * sizeof(char*));
     if (!fds || !unique_paths) {
         bongocat_log_error("Failed to allocate memory for file descriptors");
-        exit(1);
+        _exit(1);
     }
     
     int max_fd = -1;
@@ -93,7 +109,7 @@ static void capture_input_multiple(char **device_paths, int num_devices, int ena
     if (valid_devices == 0) {
         bongocat_log_error("No valid input devices found");
         BONGOCAT_SAFE_FREE(fds);
-        exit(1);
+        _exit(1);
     }
     
     bongocat_log_info("Successfully opened %d/%d input devices", valid_devices, num_devices);
@@ -263,7 +279,7 @@ bongocat_error_t input_start_monitoring(char **device_paths, int num_devices, in
         // Child process - handle keyboard input from multiple devices
         bongocat_log_debug("Input monitoring child process started (PID: %d)", getpid());
         capture_input_multiple(device_paths, num_devices, enable_debug);
-        exit(0);
+        _exit(0);
     }
     
     bongocat_log_info("Input monitoring started (child PID: %d)", input_child_pid);
@@ -339,7 +355,7 @@ bongocat_error_t input_restart_monitoring(char **device_paths, int num_devices, 
         // Child process - handle keyboard input from multiple devices
         bongocat_log_debug("Input monitoring child process restarted (PID: %d)", getpid());
         capture_input_multiple(device_paths, num_devices, enable_debug);
-        exit(0);
+        _exit(0);
     }
     
     bongocat_log_info("Input monitoring restarted (child PID: %d)", input_child_pid);
